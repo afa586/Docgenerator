@@ -27,7 +27,7 @@ def select_output_folder():
 def generate_documents():
     excel_file = excel_file_entry.get()
     word_file = word_file_entry.get()
-    prefix_column = suffix_column_entry.get()
+    suffix_column = suffix_column_entry.get()
     output_folder = output_folder_entry.get()
 
     if not excel_file or not word_file or not output_folder:
@@ -40,10 +40,11 @@ def generate_documents():
         messagebox.showerror("Error", f"Failed to read Excel file:\n{e}")
         return
 
-    if prefix_column not in data.columns:
-        messagebox.showerror("Error", "Invalid prefix column selected.")
+    if suffix_column not in data.columns:
+        messagebox.showerror("Error", "Invalid suffix column selected.")
         return
 
+    combined_document = None
     for index, row in data.iterrows():
         document = Document(word_file)
         for column in data.columns:
@@ -52,10 +53,21 @@ def generate_documents():
             for paragraph in document.paragraphs:
                 if placeholder in paragraph.text:
                     paragraph.text = paragraph.text.replace(placeholder, value)
-        suffix = str(row[prefix_column])
+        suffix = str(row[suffix_column])
         filename = f"{index}_{suffix}.docx"
         filepath = os.path.join(output_folder, filename)
         document.save(filepath)
+
+        if combine_var.get():
+            if not combined_document:
+                combined_document = document
+            else:
+                for element in document.element.body:
+                    combined_document.element.body.append(element)
+
+    if combine_var.get() and combined_document:
+        combined_filename = os.path.join(output_folder, "combined.docx")
+        combined_document.save(combined_filename)
 
     messagebox.showinfo("Success", "Documents generated successfully.")
 
@@ -94,9 +106,77 @@ output_folder_entry.pack()
 output_folder_button = tk.Button(window, text="Browse", command=select_output_folder)
 output_folder_button.pack()
 
+# Combine documents option
+combine_var = tk.BooleanVar()
+combine_var.set(False)
+combine_checkbutton = tk.Checkbutton(window, text="Combine generated documents into a single file", variable=combine_var)
+combine_checkbutton.pack()
+
 # Generate button
 generate_button = tk.Button(window, text="Generate Documents", command=generate_documents)
 generate_button.pack()
 
 # Run the main event loop
 window.mainloop()
+def generate_documents():
+    excel_file = excel_file_entry.get()
+    word_file = word_file_entry.get()
+    suffix_column = suffix_column_entry.get()
+    output_folder = output_folder_entry.get()
+
+    if not excel_file or not word_file or not output_folder:
+        messagebox.showerror("Error", "Please select Excel file, Word file, and output folder.")
+        return
+
+    try:
+        data = pd.read_excel(excel_file)
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to read Excel file:\n{e}")
+        return
+
+    if suffix_column not in data.columns:
+        messagebox.showerror("Error", "Invalid suffix column selected.")
+        return
+
+    # Create an empty Document object to hold the combined document
+    combined_document = Document()
+
+    # Loop through each row in the Excel sheet
+    for index, row in data.iterrows():
+
+        # Load the base Word document
+        document = Document(word_file)
+
+        # Replace placeholders with values from the current row in the Excel sheet
+        for column in data.columns:
+            placeholder = '{' + column + '}'
+            value = str(row[column])
+            for paragraph in document.paragraphs:
+                if placeholder in paragraph.text:
+                    paragraph.text = paragraph.text.replace(placeholder, value)
+
+        # Generate a filename for the output document based on the current row index and the suffix column
+        suffix = str(row[suffix_column])
+        filename = f"{index}_{suffix}.docx"
+        filepath = os.path.join(output_folder, filename)
+
+        # Save the current document to disk
+        document.save(filepath)
+
+        # If combine checkbox is checked, add contents of each document to combined document with page break
+        if combine_var.get():
+            # Load the current document from disk and append its contents to the combined document
+            with open(filepath, 'rb') as f:
+                sub_document = Document(f)
+                if index > 0:
+                    combined_document.add_page_break()  # Add a page break before appending the new sub-document
+                for element in sub_document.element.body:
+                    combined_document.element.body.append(element)
+     
+
+    # If the 'combine_var' checkbox is checked, save the combined document to disk
+    if combine_var.get() and len(data) > 0:
+        combined_filename = os.path.join(output_folder, "combined.docx")
+        combined_document.save(combined_filename)
+
+    messagebox.showinfo("Success", "Documents generated successfully.")
